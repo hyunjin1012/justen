@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gutenberg Search
+
+A semantic search application for discovering books from Project Gutenberg using natural language queries. Built with Next.js, OpenAI embeddings, and modern web technologies.
+
+## Features
+
+- **Semantic Search**: Find books using natural language queries like "I want to find a book that features a British king"
+- **AI-Powered**: Uses OpenAI's text embeddings for intelligent book matching
+- **Modern UI**: Clean, responsive interface with dark mode support
+- **Real-time Results**: Fast search with relevance scoring
+- **Direct Links**: Access books directly on Project Gutenberg
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 18+ 
+- OpenAI API key
+
+### Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo-url>
+cd justen
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up environment variables:
+Create a `.env.local` file in the root directory:
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Get your OpenAI API key from [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
-## Learn More
+4. Run the development server:
+```bash
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## How It Works
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Book Database**: The app includes a curated set of popular books from Project Gutenberg with detailed descriptions
+2. **Embeddings**: Each book's title, author, and description are converted into vector embeddings using OpenAI's text-embedding-3-small model
+3. **Semantic Search**: User queries are also converted to embeddings and compared using cosine similarity
+4. **Results**: The top 10 most relevant books are returned with similarity scores
 
-## Deploy on Vercel
+## Example Queries
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- "Books about British kings and royalty" → Macbeth, Hamlet
+- "Stories with magical adventures" → Alice's Adventures in Wonderland
+- "Classic detective mysteries" → The Adventures of Sherlock Holmes
+- "Adventure tales on the high seas" → Treasure Island
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Technology Stack
+
+- **Frontend**: Next.js 15, React 19, TypeScript
+- **Styling**: Tailwind CSS
+- **AI**: OpenAI API (text-embedding-3-small)
+- **Icons**: Lucide React
+- **Vector Similarity**: cosine-similarity library
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── api/search/route.ts    # Search API endpoint
+│   ├── page.tsx               # Main search interface
+│   ├── layout.tsx             # App layout
+│   └── globals.css            # Global styles
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## License
+
+This project is open source and available under the MIT License.
