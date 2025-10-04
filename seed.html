@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Database Seeding</title>
+</head>
+<body>
+    <h1>Database Seeding</h1>
+    <button onclick="seedDatabase()">Seed Database (200 books)</button>
+    <button onclick="seedDatabase(500)">Seed Database (500 books)</button>
+    <div id="result"></div>
+
+    <script>
+        async function seedDatabase(totalBooks = 200) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '🌱 Starting database seeding...';
+            
+            try {
+                const response = await fetch('/api/seed', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ totalBooks })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `✅ Database seeded successfully!<br>📚 Books added: ${result.booksCount}`;
+                } else {
+                    resultDiv.innerHTML = `❌ Seeding failed: ${result.error}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

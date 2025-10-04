@@ -35,7 +35,9 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error('Search failed');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Search API error:', errorData);
+        throw new Error(`Search failed: ${errorData.error || response.statusText}`);
       }
 
       const data = await response.json();
