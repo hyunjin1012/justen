@@ -63,7 +63,7 @@ export default function Home() {
           </div>
           <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
             Discover books from Project Gutenberg using semantic search. 
-            Find exactly what you're looking for with natural language queries.
+            Find exactly what you&apos;re looking for with natural language queries.
           </p>
         </div>
 
@@ -112,7 +112,7 @@ export default function Home() {
                   Search Results ({results.length})
                 </h2>
                 <div className="space-y-4">
-                  {results.map((book, index) => (
+                  {results.map((book) => (
                     <div
                       key={book.id}
                       className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow"

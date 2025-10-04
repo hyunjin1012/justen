@@ -311,7 +311,7 @@ export async function POST(request: NextRequest) {
           const embeddingArray = JSON.parse(book.embedding);
           const similarity = cosineSimilarity(queryEmbedding, embeddingArray);
           return similarity > 0.15; // 15% similarity threshold
-        } catch (error) {
+        } catch {
           return false;
         }
       }
