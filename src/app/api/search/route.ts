@@ -378,8 +378,11 @@ export async function POST(request: NextRequest) {
       .slice(0, 10)
       .map((book) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { embedding, ...bookWithoutEmbedding } = book;
-        return bookWithoutEmbedding;
+        const { embedding, gutenberg_id, ...bookWithoutEmbedding } = book;
+        return {
+          ...bookWithoutEmbedding,
+          gutenbergId: gutenberg_id
+        };
       });
 
     console.log(`📊 Top results (${resultsWithSimilarity.length} books):`);

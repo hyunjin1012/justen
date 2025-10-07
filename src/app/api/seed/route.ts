@@ -39,13 +39,22 @@ function generateBookDescription(bookData: Record<string, unknown>): string {
   return description;
 }
 
-// Fetch books from Gutendex API with pagination
+// Fetch books from Gutendex API with pagination, skipping existing books
 async function fetchBooksFromAPI(totalBooks: number = 200): Promise<Record<string, unknown>[]> {
   const allBooks: Record<string, unknown>[] = [];
   let page = 1;
   const limit = 32; // Gutendex API limit per page
   
   console.log(`🌐 Starting to fetch ${totalBooks} books from Gutendex API...`);
+  
+  // Get existing book IDs to avoid duplicates
+  const { data: existingBooks } = await supabase
+    .from('books')
+    .select('gutenberg_id');
+  
+  const existingIds = new Set(existingBooks?.map(book => book.gutenberg_id) || []);
+  console.log(`📚 Found ${existingIds.size} existing books in database`);
+  console.log(`📚 Sample existing IDs:`, Array.from(existingIds).slice(0, 5));
   
   while (allBooks.length < totalBooks) {
     try {
@@ -68,11 +77,20 @@ async function fetchBooksFromAPI(totalBooks: number = 200): Promise<Record<strin
         break;
       }
       
-      // Add books to our collection
-      const booksToAdd = data.results.slice(0, totalBooks - allBooks.length);
+      // Filter out existing books and add new ones to our collection
+      console.log(`📚 Page ${page} books:`, data.results.map((book: Record<string, unknown>) => ({ id: book.id, title: book.title })).slice(0, 3));
+      const newBooks = data.results.filter((book: Record<string, unknown>) => !existingIds.has(book.id));
+      const booksToAdd = newBooks.slice(0, totalBooks - allBooks.length);
       allBooks.push(...booksToAdd);
       
-      console.log(`📚 Fetched ${booksToAdd.length} books from page ${page}`);
+      console.log(`📚 Found ${newBooks.length} new books on page ${page}, adding ${booksToAdd.length}`);
+      
+      // If no new books found on this page, we need to go to the next page
+      if (newBooks.length === 0) {
+        console.log(`📚 No new books found on page ${page}, moving to next page...`);
+        page++;
+        continue;
+      }
       
       // If we got fewer books than requested, we've reached the end
       if (data.results.length < limit) {
@@ -96,8 +114,12 @@ async function fetchBooksFromAPI(totalBooks: number = 200): Promise<Record<strin
 }
 
 // Generate embeddings for books
-async function generateAndStoreEmbeddings(books: Record<string, unknown>[]): Promise<void> {
+async function generateAndStoreEmbeddings(books: Record<string, unknown>[]): Promise<{ processed: number, skipped: number, errors: number }> {
   console.log(`🧠 Starting embedding generation for ${books.length} books...`);
+  
+  let processed = 0;
+  let skipped = 0;
+  let errors = 0;
   
   for (let i = 0; i < books.length; i++) {
     const bookData = books[i];
@@ -111,6 +133,21 @@ async function generateAndStoreEmbeddings(books: Record<string, unknown>[]): Pro
         languages: bookData.languages || [],
         bookshelves: bookData.bookshelves || [],
       };
+      
+      // Check if book already exists in database
+      const { data: existingBooks } = await supabase
+        .from('books')
+        .select('id, embedding')
+        .eq('gutenberg_id', book.gutenberg_id);
+      
+      console.log(`  🔍 [${i + 1}/${books.length}] Checking ${book.title} (ID: ${book.gutenberg_id})`);
+      console.log(`  🔍 Existing books found: ${existingBooks?.length || 0}`);
+      
+      if (existingBooks && existingBooks.length > 0) {
+        console.log(`  ⏭️ [${i + 1}/${books.length}] Skipping ${book.title} (already exists)`);
+        skipped++;
+        continue;
+      }
       
       console.log(`  🧠 [${i + 1}/${books.length}] Processing: ${book.title}`);
       
@@ -126,15 +163,22 @@ async function generateAndStoreEmbeddings(books: Record<string, unknown>[]): Pro
       // Store book with embedding in Supabase
       const { error } = await supabase
         .from('books')
-        .upsert({
+        .insert({
           ...book,
           embedding
-        }, { onConflict: 'gutenberg_id' });
+        });
 
       if (error) {
-        console.error(`  ❌ [${i + 1}/${books.length}] Error storing ${book.title}:`, error);
+        if (error.code === '23505') { // Unique constraint violation
+          console.log(`  ⏭️ [${i + 1}/${books.length}] Skipped ${book.title} (already exists)`);
+          skipped++;
+        } else {
+          console.error(`  ❌ [${i + 1}/${books.length}] Error storing ${book.title}:`, error);
+          errors++;
+        }
       } else {
         console.log(`  ✅ [${i + 1}/${books.length}] Stored ${book.title} with embedding`);
+        processed++;
       }
       
       // Add a small delay to avoid rate limiting
@@ -142,10 +186,12 @@ async function generateAndStoreEmbeddings(books: Record<string, unknown>[]): Pro
       
     } catch (error) {
       console.error(`  ❌ [${i + 1}/${books.length}] Error processing book:`, error);
+      errors++;
     }
   }
   
-  console.log(`🧠 Completed embedding generation for ${books.length} books`);
+  console.log(`🧠 Completed embedding generation: ${processed} processed, ${skipped} skipped, ${errors} errors`);
+  return { processed, skipped, errors };
 }
 
 export async function POST(request: NextRequest) {
@@ -174,14 +220,18 @@ export async function POST(request: NextRequest) {
     }
     
     // Generate embeddings and store in database
-    await generateAndStoreEmbeddings(books);
+    const results = await generateAndStoreEmbeddings(books);
     
     console.log('✅ Database seeding completed successfully');
     
     return NextResponse.json({ 
       success: true, 
-      message: `Database seeded with ${books.length} books`,
-      booksCount: books.length
+      message: `Database seeding completed`,
+      booksFetched: books.length,
+      booksProcessed: results.processed,
+      booksSkipped: results.skipped,
+      booksWithErrors: results.errors,
+      note: results.processed === 0 ? "No new books were added (all were duplicates)" : `${results.processed} new books added`
     });
     
   } catch (error) {
