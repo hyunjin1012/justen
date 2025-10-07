@@ -245,9 +245,11 @@ export default function Home() {
           <div className="max-w-4xl mx-auto">
             {isLoading ? (
               <div className="text-center py-12">
-                <div className="relative">
-                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-                  <Sparkles className="h-4 w-4 text-yellow-500 absolute top-0 right-1/2 transform translate-x-2 animate-pulse" />
+                <div className="relative inline-block mb-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Sparkles className="h-3 w-3 text-yellow-500 animate-pulse" />
+                  </div>
                 </div>
                 <p className="text-slate-600 dark:text-slate-400 mb-2">
                   Searching through 1,001+ books with AI...
