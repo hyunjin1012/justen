@@ -257,7 +257,16 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ Environment variables check passed');
     
-    const { query } = await request.json();
+    // Parse request body with error handling
+    let query: string;
+    try {
+      const body = await request.json();
+      query = body.query;
+    } catch (parseError) {
+      console.error('❌ Error parsing request body:', parseError);
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+    
     console.log('🔍 Starting search process...');
     console.log('📝 Query received:', query);
 
@@ -269,33 +278,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if OpenAI API key is configured
-    if (!process.env.OPENAI_API_KEY) {
-      console.log('❌ OpenAI API key not configured');
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
-    }
 
-    // Check if Supabase is configured
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-      console.log('❌ Supabase not configured');
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
-
-    // Generate embedding for the search query
+    // Generate embedding for the search query with timeout
     console.log('🔍 Generating embedding for search query...');
-    const queryResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: query,
-    });
-
-    const queryEmbedding = queryResponse.data[0].embedding;
-    console.log(`🔍 Query embedding generated (${queryEmbedding.length} dimensions)`);
+    let queryEmbedding: number[];
+    
+    try {
+      const queryResponse = await Promise.race([
+        openai.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: query,
+        }),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('OpenAI API timeout')), 30000)
+        )
+      ]);
+      
+      queryEmbedding = queryResponse.data[0].embedding;
+      console.log(`🔍 Query embedding generated (${queryEmbedding.length} dimensions)`);
+    } catch (embeddingError) {
+      console.error('❌ Error generating embedding:', embeddingError);
+      return NextResponse.json(
+        { error: 'Failed to generate search embedding', details: embeddingError instanceof Error ? embeddingError.message : 'Unknown error' },
+        { status: 500 }
+      );
+    }
 
     // First, ensure all books have embeddings
     await ensureEmbeddingsExist();
