@@ -277,18 +277,20 @@ export default function Home() {
                       className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-all duration-200 hover:scale-[1.02]"
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full text-sm font-semibold">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start gap-3 mb-2">
+                            <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full text-sm font-semibold">
                               {index + 1}
                             </div>
-                            <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                              {book.title}
-                            </h3>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 break-words">
+                                {book.title}
+                              </h3>
+                              <p className="text-slate-600 dark:text-slate-400 mt-1">
+                                by {book.author}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-slate-600 dark:text-slate-400 mb-2 ml-11">
-                            by {book.author}
-                          </p>
                         </div>
                         <div className="text-right">
                           <div className="flex items-center gap-2 mb-1">
