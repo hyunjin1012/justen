@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Search, BookOpen, Loader2, Star, Clock, TrendingUp, Sparkles, BookMarked, ExternalLink, Copy, Check } from 'lucide-react';
+import { track } from '@vercel/analytics';
 
 interface SearchResult {
   id: string;
@@ -64,6 +65,14 @@ export default function Home() {
       const data = await response.json();
       setResults(data.results || []);
       
+      // Track successful search
+      track('search_completed', {
+        query: query.trim(),
+        results_count: data.results?.length || 0,
+        search_time: Date.now() - startTime,
+        top_similarity: data.results?.[0]?.similarity || 0
+      });
+      
       // Update recent searches
       const trimmedQuery = query.trim();
       const newRecentSearches = [trimmedQuery, ...recentSearches.filter(s => s !== trimmedQuery)].slice(0, 5);
@@ -74,6 +83,12 @@ export default function Home() {
       console.error('Search error:', error);
       setResults([]);
       setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+      
+      // Track search error
+      track('search_error', {
+        query: query.trim(),
+        error_message: error instanceof Error ? error.message : 'Unknown error'
+      });
     } finally {
       setIsLoading(false);
       setSearchTime(Date.now() - startTime);
@@ -85,6 +100,11 @@ export default function Home() {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
+      
+      // Track copy action
+      track('book_id_copied', {
+        gutenberg_id: text
+      });
     } catch (err) {
       console.error('Failed to copy:', err);
     }
@@ -173,7 +193,12 @@ export default function Home() {
                 {recentSearches.map((search, index) => (
                   <button
                     key={index}
-                    onClick={() => setQuery(search)}
+                    onClick={() => {
+                      setQuery(search);
+                      track('recent_search_clicked', {
+                        query: search
+                      });
+                    }}
                     className="px-3 py-1 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                   >
                     {search}
@@ -301,6 +326,11 @@ export default function Home() {
                           href={`https://www.gutenberg.org/ebooks/${book.gutenbergId}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => track('gutenberg_link_clicked', {
+                            gutenberg_id: book.gutenbergId,
+                            book_title: book.title,
+                            similarity: book.similarity
+                          })}
                           className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium text-sm transition-colors"
                         >
                           <ExternalLink className="h-4 w-4" />
@@ -370,7 +400,13 @@ export default function Home() {
               ].map((example, index) => (
                 <button
                   key={index}
-                  onClick={() => setQuery(example.query)}
+                  onClick={() => {
+                    setQuery(example.query);
+                    track('example_query_clicked', {
+                      query: example.query,
+                      icon: example.icon
+                    });
+                  }}
                   className="p-4 text-left bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all duration-200 hover:scale-[1.02] group"
                 >
                   <div className="flex items-center gap-3">
