@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import cosineSimilarity from 'cosine-similarity';
-import { supabase, Book, SearchLog } from '@/lib/supabase';
+import { supabase, supabaseAdmin, Book, SearchLog } from '@/lib/supabase';
+
+export const runtime = 'nodejs';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -75,14 +77,15 @@ async function fetchAndStoreBooks(limit: number = 50): Promise<Book[]> {
     console.log(`📚 Successfully processed ${books.length} books from API`);
 
     // Store books in Supabase (upsert to avoid duplicates)
-    const { data: storedBooks, error } = await supabase
+    const dbClient = supabaseAdmin ?? supabase;
+    const { data: storedBooks, error } = await dbClient
       .from('books')
       .upsert(books, { onConflict: 'gutenberg_id' })
       .select();
 
     if (error) {
       console.error('❌ Error storing books in Supabase:', error);
-      return books; // Return books even if storage fails
+      return books; // Return books even if storage fails (embedding step will handle filtering)
     }
 
     console.log(`💾 Stored ${storedBooks?.length || 0} books in Supabase`);
@@ -112,15 +115,19 @@ async function generateAndStoreEmbeddings(books: Book[]): Promise<Book[]> {
       const embedding = response.data[0].embedding;
       console.log(`  ✅ [${i + 1}/${books.length}] Embedding generated (${embedding.length} dimensions)`);
       
-      // Update book with embedding in Supabase
-      const { error } = await supabase
+      // Update book with embedding in Supabase (use admin for RLS-protected writes)
+      const writeClient = supabaseAdmin ?? supabase;
+      const { data: updateData, error } = await writeClient
         .from('books')
         .update({ embedding })
-        .eq('gutenberg_id', book.gutenberg_id);
+        .eq('gutenberg_id', book.gutenberg_id)
+        .select('gutenberg_id');
 
       if (error) {
         console.error(`  ❌ [${i + 1}/${books.length}] Error updating book with embedding:`, error);
         console.error(`  ❌ Error details:`, error);
+      } else if (!updateData || updateData.length === 0) {
+        console.error(`  ❌ [${i + 1}/${books.length}] Update succeeded but no rows affected for ${book.title} (likely RLS blocking)`);
       } else {
         console.log(`  ✅ [${i + 1}/${books.length}] Embedding stored in Supabase for ${book.title}`);
         book.embedding = embedding;
@@ -224,7 +231,8 @@ async function logSearch(query: string, resultsCount: number, topSimilarity: num
       search_time_ms: searchTimeMs,
     };
 
-    const { error } = await supabase
+    const writeClient = supabaseAdmin ?? supabase;
+    const { error } = await writeClient
       .from('search_logs')
       .insert(searchLog);
 
@@ -243,6 +251,7 @@ export async function POST(request: NextRequest) {
   
   try {
     console.log('🚀 API route started');
+    console.log('service role present:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
     
     // Check environment variables first
     if (!process.env.OPENAI_API_KEY) {
@@ -326,11 +335,26 @@ export async function POST(request: NextRequest) {
     });
     
     if (!hasGoodResults) {
-      console.log('📚 No good quality results found, fetching and storing new books...');
-      const books = await fetchAndStoreBooks(50);
-      await generateAndStoreEmbeddings(books);
+      console.log('📚 No good quality results found. Considering fetching more books...');
       
-      // Try search again with new books
+      // If we already have a large dataset or no admin key, skip upsert and only ensure embeddings
+      const { count: booksCount } = await supabase
+        .from('books')
+        .select('id', { count: 'exact', head: true });
+
+      const hasPlentyOfBooks = (booksCount ?? 0) >= 1000;
+      const canWriteBooks = !!supabaseAdmin;
+
+      if (hasPlentyOfBooks || !canWriteBooks) {
+        console.log(`ℹ️ Skipping fetch/upsert (hasPlentyOfBooks=${hasPlentyOfBooks}, canWriteBooks=${canWriteBooks}). Ensuring embeddings only...`);
+        await ensureEmbeddingsExist();
+      } else {
+        console.log('🌐 Fetching and upserting additional books...');
+        await fetchAndStoreBooks(50);
+        await ensureEmbeddingsExist();
+      }
+
+      // Try search again after data prep
       const newResults = await searchBooksWithVector(queryEmbedding, 10);
       
       if (newResults.length === 0) {
