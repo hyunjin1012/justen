@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Search, BookOpen, Loader2, Star, Clock, TrendingUp, Sparkles, BookMarked, ExternalLink, Copy, Check } from 'lucide-react';
 import { track } from '@vercel/analytics';
+import BookReader from '@/components/BookReader';
 
 interface SearchResult {
   id: string;
@@ -22,6 +23,7 @@ export default function Home() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
 
   // Load recent searches from localStorage on mount
   useEffect(() => {
@@ -326,20 +328,36 @@ export default function Home() {
                             )}
                           </button>
                         </div>
-                        <a
-                          href={`https://www.gutenberg.org/ebooks/${book.gutenbergId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => track('gutenberg_link_clicked', {
-                            gutenberg_id: book.gutenbergId,
-                            book_title: book.title,
-                            similarity: book.similarity
-                          })}
-                          className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium text-sm transition-colors"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                          Read on Gutenberg
-                        </a>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedBookId(book.gutenbergId);
+                              track('book_reader_opened', {
+                                gutenberg_id: book.gutenbergId,
+                                book_title: book.title,
+                                similarity: book.similarity
+                              });
+                            }}
+                            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium text-sm transition-colors"
+                          >
+                            <BookOpen className="h-4 w-4" />
+                            Read Book
+                          </button>
+                          <a
+                            href={`https://www.gutenberg.org/ebooks/${book.gutenbergId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => track('gutenberg_link_clicked', {
+                              gutenberg_id: book.gutenbergId,
+                              book_title: book.title,
+                              similarity: book.similarity
+                            })}
+                            className="inline-flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 font-medium text-sm transition-colors"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Gutenberg
+                          </a>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -427,6 +445,14 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Book Reader Modal */}
+      {selectedBookId && (
+        <BookReader
+          bookId={selectedBookId}
+          onClose={() => setSelectedBookId(null)}
+        />
+      )}
     </div>
   );
 }
