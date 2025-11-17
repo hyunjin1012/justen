@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, BookOpen, Loader2, Star, Clock, TrendingUp, Sparkles, BookMarked, ExternalLink, Copy, Check } from 'lucide-react';
+import { Search, BookOpen, Loader2, Star, Clock, TrendingUp, Sparkles, BookMarked, ExternalLink } from 'lucide-react';
 import { track } from '@vercel/analytics';
 import BookReader from '@/components/BookReader';
 
@@ -12,6 +12,10 @@ interface SearchResult {
   description: string;
   gutenbergId: string;
   similarity: number;
+  subjects?: string[];
+  languages?: string[];
+  bookshelves?: string[];
+  summary?: string;
 }
 
 export default function Home() {
@@ -20,10 +24,12 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchTime, setSearchTime] = useState<number | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [bookSummaries, setBookSummaries] = useState<Record<string, string>>({});
+  const [loadingSummaries, setLoadingSummaries] = useState<Set<string>>(new Set());
+  const [expandedSummaries, setExpandedSummaries] = useState<Set<string>>(new Set());
 
   // Load recent searches from localStorage on mount
   useEffect(() => {
@@ -33,6 +39,207 @@ export default function Home() {
     }
   }, []);
 
+  // Format description to be more readable
+  const formatDescription = (description: string): string | null => {
+    if (!description) return null;
+    
+    let cleaned = description
+      // Remove "An English work by..." prefix
+      .replace(/^An? \w+ work by [^.]+\.[\s]*/i, '')
+      // Remove "This book explores themes related to..." 
+      .replace(/This book explores themes related to /gi, '')
+      // Remove "Categorized under..."
+      .replace(/\. Categorized under [^.]+\.?/gi, '.')
+      // Clean up multiple spaces
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // If description is just a list of subjects (contains "-- Fiction" or similar patterns), hide it
+    if (cleaned.match(/--\s*(Fiction|History|Poetry|Drama|Literature)/i)) {
+      return null;
+    }
+    
+    // If description contains comma-separated subjects followed by "--", it's likely a subject list
+    if (cleaned.match(/^[^.]*,\s*[^.]*\s*--/)) {
+      return null;
+    }
+    
+    // If description contains patterns like "1564-1616" (birth-death years), it's likely metadata
+    if (cleaned.match(/\d{4}-\d{4}/)) {
+      return null;
+    }
+    
+    // If description is just a comma-separated list of short phrases (like "English poetry, Sonnets, English.")
+    const commaParts = cleaned.split(',');
+    if (commaParts.length >= 2) {
+      const parts = commaParts.map(p => p.trim().replace(/\.$/, ''));
+      // If all parts are short (likely subjects) and no part contains a sentence, it's probably just subjects
+      if (parts.every(part => part.length < 30 && !part.match(/\.\s+[A-Z]/))) {
+        return null;
+      }
+    }
+    
+    // If description is very short or just subjects, don't show it
+    if (cleaned.length < 20) {
+      return null;
+    }
+    
+    // Capitalize first letter
+    if (cleaned.length > 0) {
+      cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    }
+    
+    return cleaned || null;
+  };
+
+  // Format subject tags - make them shorter and more readable
+  const formatSubject = (subject: string): string => {
+    let formatted = subject;
+    
+    // Remove "Category: " prefix
+    formatted = formatted.replace(/^Category:\s*/i, '');
+    
+    // Handle complex subjects with multiple "--" separators
+    const parts = formatted.split(/\s*--\s*/);
+    
+    // Remove common suffixes
+    const suffixesToRemove = ['Fiction', 'History', 'Poetry', 'Drama', 'Nonfiction', 'Literature'];
+    const cleanedParts = parts.filter(part => 
+      !suffixesToRemove.some(suffix => part.toLowerCase() === suffix.toLowerCase())
+    );
+    
+    // Handle special cases
+    if (cleanedParts.length > 1) {
+      // Skip generic terms if there's something more specific
+      const genericTerms = ['British', 'England', 'Europe', 'United States', 'America', 'English'];
+      const specificParts = cleanedParts.filter(part => {
+        const partLower = part.toLowerCase();
+        return !genericTerms.some(term => partLower === term.toLowerCase() || partLower.includes(term.toLowerCase()));
+      });
+      
+      if (specificParts.length > 0) {
+        formatted = specificParts[specificParts.length - 1];
+      } else {
+        formatted = cleanedParts[cleanedParts.length - 1];
+      }
+    } else if (cleanedParts.length === 1) {
+      formatted = cleanedParts[0];
+    }
+    
+    // Clean up parentheses content (like "Juliet (Fictitious character)")
+    formatted = formatted.replace(/\s*\([^)]*\)/g, '');
+    
+    // Clean up common patterns
+    formatted = formatted
+      .replace(/\s*--\s*Fiction\s*$/i, '')
+      .replace(/\s*--\s*History\s*$/i, '')
+      .replace(/\s*--\s*Poetry\s*$/i, '')
+      .replace(/\s*--\s*Drama\s*$/i, '')
+      .replace(/\s*,\s*etc\.?/gi, '')
+      .trim();
+    
+    // Handle "Early modern and..." type subjects - extract key term
+    if (formatted.toLowerCase().includes('early modern')) {
+      formatted = 'Early modern';
+    }
+    
+    // Handle "Conflict of..." type subjects - extract the key concept
+    if (formatted.toLowerCase().includes('conflict of')) {
+      const match = formatted.match(/conflict of\s+(.+)/i);
+      if (match && match[1]) {
+        formatted = match[1].split(/\s+/)[0]; // Take first word after "of"
+      } else {
+        formatted = 'Conflict';
+      }
+    }
+    
+    // Capitalize first letter
+    if (formatted.length > 0) {
+      formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    }
+    
+    // Truncate very long subjects (but try to keep them shorter)
+    if (formatted.length > 22) {
+      // Try to truncate at a word boundary
+      const truncated = formatted.substring(0, 19);
+      const lastSpace = truncated.lastIndexOf(' ');
+      if (lastSpace > 8) {
+        formatted = truncated.substring(0, lastSpace) + '...';
+      } else {
+        formatted = truncated + '...';
+      }
+    }
+    
+    return formatted;
+  };
+
+  // Get primary subjects (top 3) with formatting
+  const getPrimarySubjects = (subjects?: string[]): string[] => {
+    if (!subjects || subjects.length === 0) return [];
+    return subjects.slice(0, 3).map(formatSubject);
+  };
+
+  // Fetch summary for a book
+  const fetchBookSummary = async (bookId: string) => {
+    // Don't fetch if already loading or already have summary
+    if (loadingSummaries.has(bookId) || bookSummaries[bookId]) {
+      return;
+    }
+
+    setLoadingSummaries(prev => new Set(prev).add(bookId));
+
+    try {
+      const response = await fetch(`/api/book-summary?id=${bookId}`);
+      const data = await response.json();
+
+      if (data.success && data.summary) {
+        setBookSummaries(prev => ({
+          ...prev,
+          [bookId]: data.summary
+        }));
+      }
+    } catch (error) {
+      console.error(`Error fetching summary for book ${bookId}:`, error);
+    } finally {
+      setLoadingSummaries(prev => {
+        const next = new Set(prev);
+        next.delete(bookId);
+        return next;
+      });
+    }
+  };
+
+  // Toggle summary expansion
+  const toggleSummary = (bookId: string) => {
+    setExpandedSummaries(prev => {
+      const next = new Set(prev);
+      if (next.has(bookId)) {
+        next.delete(bookId);
+      } else {
+        next.add(bookId);
+      }
+      return next;
+    });
+  };
+
+  // Check if summary needs truncation (rough estimate: more than ~150 chars)
+  const needsTruncation = (text: string): boolean => {
+    return text.length > 150;
+  };
+
+  // Fetch summaries for all books when results change
+  useEffect(() => {
+    if (results.length > 0) {
+      // Fetch summaries for all books
+      results.forEach(book => {
+        if (!bookSummaries[book.gutenbergId] && !loadingSummaries.has(book.gutenbergId)) {
+          fetchBookSummary(book.gutenbergId);
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results]);
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
@@ -41,6 +248,9 @@ export default function Home() {
     setIsLoading(true);
     setHasSearched(true);
     setError(null);
+    setBookSummaries({}); // Clear previous summaries
+    setLoadingSummaries(new Set()); // Clear loading states
+    setExpandedSummaries(new Set()); // Clear expanded states
 
     try {
       const response = await fetch('/api/search', {
@@ -95,28 +305,6 @@ export default function Home() {
       setIsLoading(false);
       setSearchTime(Date.now() - startTime);
     }
-  };
-
-  const copyToClipboard = async (text: string, id: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-      
-      // Track copy action
-      track('book_id_copied', {
-        gutenberg_id: text
-      });
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
-
-  const getSimilarityColor = (similarity: number) => {
-    if (similarity >= 0.7) return 'text-green-600 dark:text-green-400';
-    if (similarity >= 0.5) return 'text-blue-600 dark:text-blue-400';
-    if (similarity >= 0.3) return 'text-yellow-600 dark:text-yellow-400';
-    return 'text-orange-600 dark:text-orange-400';
   };
 
   const getSimilarityIcon = (similarity: number) => {
@@ -264,15 +452,16 @@ export default function Home() {
             ) : results.length > 0 ? (
               <div>
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                    Search Results ({results.length})
-                  </h2>
-                  {searchTime && (
-                    <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                      <Clock className="h-4 w-4" />
-                      <span>{searchTime}ms</span>
-                    </div>
-                  )}
+                  <div>
+                    <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      Search Results ({results.length})
+                    </h2>
+                    {searchTime && (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Found in {searchTime}ms
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-4">
                   {results.map((book, index) => (
@@ -280,83 +469,135 @@ export default function Home() {
                       key={book.id}
                       className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-all duration-200 hover:scale-[1.02]"
                     >
-                      <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-start gap-4">
+                        {/* Rank Badge */}
+                        <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg text-sm font-bold shadow-md">
+                          {index + 1}
+                        </div>
+                        
+                        {/* Main Content */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start gap-3 mb-2">
-                            <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full text-sm font-semibold">
-                              {index + 1}
+                          {/* Title and Author */}
+                          <div className="mb-3">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 break-words mb-1">
+                              {book.title}
+                            </h3>
+                            <p className="text-slate-600 dark:text-slate-400 font-medium">
+                              {book.author}
+                            </p>
+                          </div>
+
+                          {/* Subjects and Description */}
+                          {(() => {
+                            // Prefer summary over description
+                            const summary = bookSummaries[book.gutenbergId];
+                            const desc = formatDescription(book.description);
+                            const displayText = summary || desc;
+                            const hasContent = !!displayText;
+                            const isLoadingSummary = loadingSummaries.has(book.gutenbergId);
+                            
+                            return (
+                              <>
+                                {/* Subjects as Tags */}
+                                {getPrimarySubjects(book.subjects).length > 0 && (
+                                  <div className={`flex flex-wrap gap-2 ${hasContent ? 'mb-3' : 'mb-4'}`}>
+                                    {getPrimarySubjects(book.subjects).map((subject, idx) => {
+                                      const originalSubject = book.subjects?.[idx] || '';
+                                      // Show tooltip if formatted subject is different from original or if original is long
+                                      const showTooltip = originalSubject && (
+                                        originalSubject !== subject || 
+                                        originalSubject.length > 25
+                                      );
+                                      return (
+                                        <span
+                                          key={idx}
+                                          title={showTooltip ? originalSubject : undefined}
+                                          className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium rounded-full border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-help"
+                                        >
+                                          {subject}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* Description/Summary */}
+                                {isLoadingSummary && (
+                                  <div className="mb-4 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    <span>Loading description...</span>
+                                  </div>
+                                )}
+                                {hasContent && !isLoadingSummary && (
+                                  <div className="mb-4">
+                                    <p className={`text-slate-700 dark:text-slate-300 leading-relaxed ${expandedSummaries.has(book.gutenbergId) ? '' : 'line-clamp-3'}`}>
+                                      {displayText}
+                                    </p>
+                                    {needsTruncation(displayText) && (
+                                      <button
+                                        onClick={() => toggleSummary(book.gutenbergId)}
+                                        className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
+                                      >
+                                        {expandedSummaries.has(book.gutenbergId) ? 'Show less' : 'Read more'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+
+                          {/* Footer Actions */}
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-3">
+                              {/* Relevance Score */}
+                              <div className="flex items-center gap-2">
+                                {getSimilarityIcon(book.similarity)}
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                                  {Math.round(book.similarity * 100)}% match
+                                </span>
+                              </div>
+                              
+                              {/* Language */}
+                              {book.languages && book.languages.length > 0 && (
+                                <span className="text-xs text-slate-500 dark:text-slate-400 px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                                  {book.languages[0].toUpperCase()}
+                                </span>
+                              )}
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 break-words">
-                                {book.title}
-                              </h3>
-                              <p className="text-slate-600 dark:text-slate-400 mt-1">
-                                by {book.author}
-                              </p>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedBookId(book.gutenbergId);
+                                  track('book_reader_opened', {
+                                    gutenberg_id: book.gutenbergId,
+                                    book_title: book.title,
+                                    similarity: book.similarity
+                                  });
+                                }}
+                                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm hover:shadow-md"
+                              >
+                                <BookOpen className="h-4 w-4" />
+                                Read
+                              </button>
+                              <a
+                                href={`https://www.gutenberg.org/ebooks/${book.gutenbergId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => track('gutenberg_link_clicked', {
+                                  gutenberg_id: book.gutenbergId,
+                                  book_title: book.title,
+                                  similarity: book.similarity
+                                })}
+                                className="inline-flex items-center gap-2 px-3 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg font-medium text-sm transition-colors"
+                                title="View on Project Gutenberg"
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </a>
                             </div>
                           </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="flex items-center gap-2 mb-1">
-                            {getSimilarityIcon(book.similarity)}
-                            <span className="text-sm text-slate-500 dark:text-slate-400">
-                              Relevance
-                            </span>
-                          </div>
-                          <div className={`text-lg font-semibold ${getSimilarityColor(book.similarity)}`}>
-                            {Math.round(book.similarity * 100)}%
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-slate-700 dark:text-slate-300 mb-4 line-clamp-3 ml-11">
-                        {book.description}
-                      </p>
-                      <div className="flex items-center justify-between ml-11">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-slate-500 dark:text-slate-400">
-                            ID: {book.gutenbergId}
-                          </span>
-                          <button
-                            onClick={() => copyToClipboard(book.gutenbergId, book.id)}
-                            className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-                            title="Copy ID"
-                          >
-                            {copiedId === book.id ? (
-                              <Check className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Copy className="h-3 w-3 text-slate-400" />
-                            )}
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedBookId(book.gutenbergId);
-                              track('book_reader_opened', {
-                                gutenberg_id: book.gutenbergId,
-                                book_title: book.title,
-                                similarity: book.similarity
-                              });
-                            }}
-                            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium text-sm transition-colors"
-                          >
-                            <BookOpen className="h-4 w-4" />
-                            Read Book
-                          </button>
-                          <a
-                            href={`https://www.gutenberg.org/ebooks/${book.gutenbergId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => track('gutenberg_link_clicked', {
-                              gutenberg_id: book.gutenbergId,
-                              book_title: book.title,
-                              similarity: book.similarity
-                            })}
-                            className="inline-flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 font-medium text-sm transition-colors"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                            Gutenberg
-                          </a>
                         </div>
                       </div>
                     </div>
