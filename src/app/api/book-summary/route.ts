@@ -16,27 +16,64 @@ export async function GET(request: NextRequest) {
     console.log(`📖 Fetching summary for book ID: ${bookId}`);
 
     // Fetch book metadata from Gutendex API
-    const response = await fetch(`${GUTENDEX_API_URL}?ids=${bookId}`, {
-      headers: {
-        'User-Agent': 'Gutenberg-Search-App/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch book: ${response.status}`);
+    // Note: Gutendex API may have SSL certificate issues, so we handle ALL errors gracefully
+    let response;
+    try {
+      response = await fetch(`${GUTENDEX_API_URL}?ids=${bookId}`, {
+        headers: {
+          'User-Agent': 'Gutenberg-Search-App/1.0',
+        },
+      });
+    } catch (fetchError: unknown) {
+      // Handle ALL fetch errors gracefully (SSL certificate errors, network issues, etc.)
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+      console.error(`❌ Fetch error for book ${bookId}:`, errorMessage);
+      console.log(`⚠️ Returning empty summary for book ${bookId} due to fetch error`);
+      return NextResponse.json({
+        success: true,
+        summary: null,
+        hasSummary: false,
+      });
     }
 
-    const data = await response.json();
+    if (!response.ok) {
+      console.error(`❌ HTTP error for book ${bookId}:`, response.status);
+      return NextResponse.json({
+        success: true,
+        summary: null,
+        hasSummary: false,
+      });
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error(`❌ JSON parse error for book ${bookId}:`, jsonError);
+      return NextResponse.json({
+        success: true,
+        summary: null,
+        hasSummary: false,
+      });
+    }
+
     const results = data.results;
 
     if (!results || results.length === 0) {
-      return NextResponse.json({ error: 'Book not found' }, { status: 404 });
+      console.log(`ℹ️ Book ${bookId} not found in Gutendex`);
+      return NextResponse.json({
+        success: true,
+        summary: null,
+        hasSummary: false,
+      });
     }
 
     const book = results[0];
     
     // Gutendex API provides summaries array - use the first one if available
     const summaries = book.summaries as string[] | undefined;
+    console.log(`📖 Book ${bookId} summaries:`, summaries);
+    
     let summary = summaries && summaries.length > 0 ? summaries[0] : null;
 
     // Remove the automatic disclaimer that Gutendex adds
@@ -45,6 +82,9 @@ export async function GET(request: NextRequest) {
         .replace(/\s*\(This is an automatically generated summary\.\)\s*$/i, '')
         .replace(/\s*\(This is an automatically generated summary\)\s*$/i, '')
         .trim();
+      console.log(`✅ Cleaned summary for book ${bookId}:`, summary.substring(0, 100) + '...');
+    } else {
+      console.log(`ℹ️ No summary found for book ${bookId}`);
     }
 
     return NextResponse.json({
@@ -54,14 +94,13 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Book summary API error:', error);
-    return NextResponse.json(
-      { 
-        error: 'Failed to fetch book summary',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    // Handle ALL unexpected errors gracefully - return success with no summary
+    console.error(`❌ Unexpected error for book summary:`, error);
+    return NextResponse.json({
+      success: true,
+      summary: null,
+      hasSummary: false,
+    });
   }
 }
 

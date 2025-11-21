@@ -189,17 +189,29 @@ export default function Home() {
     setLoadingSummaries(prev => new Set(prev).add(bookId));
 
     try {
+      console.log(`📖 Fetching summary for book ${bookId}...`);
       const response = await fetch(`/api/book-summary?id=${bookId}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`❌ HTTP error for book ${bookId}:`, response.status, errorData);
+        return;
+      }
+      
       const data = await response.json();
+      console.log(`📖 Summary response for book ${bookId}:`, data);
 
       if (data.success && data.summary) {
         setBookSummaries(prev => ({
           ...prev,
           [bookId]: data.summary
         }));
+        console.log(`✅ Summary loaded for book ${bookId}`);
+      } else {
+        console.log(`ℹ️ No summary available for book ${bookId} (success: ${data.success}, hasSummary: ${data.hasSummary})`);
       }
     } catch (error) {
-      console.error(`Error fetching summary for book ${bookId}:`, error);
+      console.error(`❌ Error fetching summary for book ${bookId}:`, error);
     } finally {
       setLoadingSummaries(prev => {
         const next = new Set(prev);
@@ -230,10 +242,14 @@ export default function Home() {
   // Fetch summaries for all books when results change
   useEffect(() => {
     if (results.length > 0) {
+      console.log(`📚 Fetching summaries for ${results.length} books...`);
       // Fetch summaries for all books
       results.forEach(book => {
-        if (!bookSummaries[book.gutenbergId] && !loadingSummaries.has(book.gutenbergId)) {
-          fetchBookSummary(book.gutenbergId);
+        const bookId = book.gutenbergId;
+        if (!bookSummaries[bookId] && !loadingSummaries.has(bookId)) {
+          fetchBookSummary(bookId);
+        } else {
+          console.log(`⏭️ Skipping book ${bookId} (already loaded or loading)`);
         }
       });
     }
