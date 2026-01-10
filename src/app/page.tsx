@@ -458,7 +458,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-slate-600 dark:text-slate-400 mb-2">
-                  Searching through 1,001+ books with AI...
+                  Searching through 1,001+ books...
                 </p>
                 <div className="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                   <Clock className="h-4 w-4" />
