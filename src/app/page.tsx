@@ -344,7 +344,7 @@ export default function Home() {
             </h1>
           </div>
           <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto mb-4">
-            Discover books from Project Gutenberg using AI-powered semantic search. 
+            Discover books from Project Gutenberg using semantic search. 
             Find exactly what you&apos;re looking for with natural language queries.
           </p>
           <div className="flex items-center justify-center gap-6 text-sm text-slate-500 dark:text-slate-400">
@@ -354,7 +354,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
-              <span>AI-Powered</span>
+              <span>Natural Language</span>
             </div>
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
